@@ -228,7 +228,8 @@ def resolve_source(source: str, *, region: str | None = None,
             "label": window.title or window.app_class or "Window",
         }
 
-    target = output or (focused_output().name if focused_output() else None)
+    monitor = None if output else focused_output()
+    target = output or (monitor.name if monitor else None)
     if not target:
         raise SourceError("no monitor reported by Hyprland")
     return {"source": "output", "geometry": None, "output": target, "label": target}
