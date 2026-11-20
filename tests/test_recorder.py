@@ -138,6 +138,15 @@ class ArgvTest(unittest.TestCase):
         self.assertIn("0,0 640x480", argv)
         self.assertIn("--no-cursor", argv)
 
+    def test_replay_adds_history_to_wl_screenrec(self):
+        argv = R.build_argv(self.recording(backend="wl-screenrec", replay=30))
+        self.assertIn("--history", argv)
+        self.assertEqual(argv[argv.index("--history") + 1], "30")
+
+    def test_no_history_flag_without_replay(self):
+        self.assertNotIn("--history",
+                         R.build_argv(self.recording(backend="wl-screenrec")))
+
     def test_vaapi_argv(self):
         argv = R.build_argv(self.recording(vaapi=True, vaapi_device="/dev/dri/renderD128",
                                           codec="h264", quality="high"))
@@ -287,6 +296,41 @@ class LifecycleTest(StateMixin):
         with mock.patch("hyprtk_rec.audio.stop_mix") as stop:
             self.assertIsNotNone(recorder.recover())
         stop.assert_called_once_with([7, 8, 9])
+
+    def test_replay_forces_wl_screenrec(self):
+        recorder = self.recorder()
+        rec = recorder.start(path=str(self.dir / "a.mp4"), replay=30,
+                             backend="wf-recorder")
+        self.assertEqual(rec.backend, "wl-screenrec")
+        self.assertEqual(rec.replay, 30)
+
+    def test_replay_without_wl_screenrec_is_an_error(self):
+        recorder = R.Recorder(str(self.state),
+                              which=lambda program: "/usr/bin/wf-recorder" if program == "wf-recorder" else None,
+                              spawn=lambda argv: self.process, alive_fn=lambda pid: True)
+        with self.assertRaises(R.RecorderError) as caught:
+            recorder.start(path=str(self.dir / "a.mp4"), replay=30)
+        self.assertIn("needs wl-screenrec", str(caught.exception))
+
+    def test_replay_cannot_be_a_gif(self):
+        with self.assertRaises(R.RecorderError) as caught:
+            self.recorder().start(path=str(self.dir / "a.gif"), replay=10, container="gif")
+        self.assertIn("GIF", str(caught.exception))
+
+    def test_save_replay_signals_usr1(self):
+        sent = []
+        recorder = R.Recorder(str(self.state), which=which_all,
+                              spawn=lambda argv: self.process,
+                              alive_fn=lambda pid: True,
+                              signal_fn=lambda pid, sig: sent.append(sig))
+        recorder.start(path=str(self.dir / "a.mp4"), replay=30)
+        self.assertEqual(recorder.save_replay(), str(self.dir / "a.mp4"))
+        self.assertIn(signal.SIGUSR1, sent)
+
+    def test_save_replay_without_a_buffer(self):
+        recorder = self.recorder()
+        recorder.start(path=str(self.dir / "a.mp4"))
+        self.assertIsNone(recorder.save_replay())
 
     def test_gif_clamps_the_frame_rate(self):
         recorder = self.recorder()

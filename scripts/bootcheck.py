@@ -201,6 +201,22 @@ def main() -> int:
     if not bridge.recentRecordings:
         fail("the recent list is empty after a recording")
 
+    # Settings sheet: instantiate it (QML errors surface here), check the
+    # defaults reset, and make sure a bad directory is still cleaned.
+    if not root.setProperty("settingsOpen", True):
+        fail("the window has no settingsOpen property")
+    root.setProperty("settingsOpen", False)
+    bridge.setConfig("notify", False)
+    bridge.setConfig("recent", 6)
+    bridge.setConfig("dir", "/tmp/hyprtk-rec-boot-out")
+    bridge.resetDefaults()
+    if bridge.settings.get("notify") is not True:
+        fail("resetDefaults did not restore notify")
+    if bridge.settings.get("recent") != 12:
+        fail(f"resetDefaults left recent at {bridge.settings.get('recent')}")
+    if not str(bridge.config.get("dir")).endswith("Recordings"):
+        fail(f"resetDefaults left dir at {bridge.config.get('dir')!r}")
+
     bridge.refreshSources()
 
     def finish() -> None:

@@ -224,6 +224,18 @@ class MainTest(unittest.TestCase):
         self.assertEqual(status, 0)
         run.assert_called_once_with("/tmp/a.mp4")
 
+    def test_replay_flag_reaches_the_recorder(self):
+        status, _, _ = self.run_cli("start", "--replay", "30")
+        self.assertEqual(status, 0)
+        self.assertEqual(self.recorder.kwargs.get("replay"), 30)
+
+    def test_save_replay_when_idle(self):
+        with mock.patch("hyprtk_rec.cli.Recorder") as recorder:
+            recorder.return_value.save_replay.return_value = None
+            status, _, err = self.run_cli("save-replay")
+        self.assertEqual(status, 3)
+        self.assertIn("no replay buffer", err)
+
     def test_vaapi_flag_reaches_the_recorder(self):
         status, _, _ = self.run_cli("start", "--vaapi")
         self.assertEqual(status, 0)

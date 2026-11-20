@@ -70,6 +70,16 @@ class SettingsTest(unittest.TestCase):
         settings.set("dir", "")
         self.assertTrue(settings.as_dict()["dir"].endswith("Recordings"))
 
+    def test_reset_restores_and_persists_the_defaults(self):
+        settings = Settings(self.path)
+        settings.set("fps", 30)
+        settings.set("notify", False)
+        settings.save()
+        settings.reset()
+        self.assertEqual(settings.get("fps"), 60)
+        self.assertTrue(settings.get("notify"))
+        self.assertEqual(Settings(self.path).get("fps"), 60)
+
     def test_unknown_keys_are_dropped(self):
         self.path.write_text('{"fps": 30, "turbo": true}', encoding="utf-8")
         settings = Settings(self.path)

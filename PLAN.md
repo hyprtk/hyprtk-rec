@@ -71,8 +71,10 @@ replay buffer, mixed system+mic audio, VAAPI selection, GPU Screen Recorder.
 - [x] **VAAPI encoding** — opt-in, h264/hevc, **probed** with
       `ffmpeg -init_hw_device` (a render node can exist and still fail); the
       window shows the failure reason and a failed probe is a start error.
-- [ ] **Replay buffer** — `wl-screenrec --history N` exists; the UI needs a
-      "save the last 30 s" button and a ring-buffer indicator.
+- [x] **Replay buffer** — `--replay N` (`wl-screenrec --history`) + Save
+      (`SIGUSR1`), window/HUD buttons and a settings row. Gated on wl-screenrec;
+      argv/signal-tested only, because the AUR package does not build against
+      Arch ffmpeg 8.
 - [x] **Named window picker** — the window source records a picked window
       (stored by client address, self-heals when it closes), `--window ADDRESS`.
 - [x] **Notification actions** — "Open folder" / "Copy path" via a detached
@@ -84,7 +86,8 @@ replay buffer, mixed system+mic audio, VAAPI selection, GPU Screen Recorder.
       root/KMS caveat stated in the UI.
 - [ ] **Multi-monitor independent recordings** (two state entries) — only if
       there is a real use case; the current rule is one at a time.
-- [ ] **A settings sheet** in the window instead of only the config file.
+- [x] **A settings sheet** — save folder, notifications, recent length, backend
+      and reset, in a panel over the window (`settingsOpen`).
 - [x] **Session restore** — `Recorder.recover()` adopts the partial file of a
       dead encoder on the next start (history + notification).
 
