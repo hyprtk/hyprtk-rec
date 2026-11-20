@@ -16,9 +16,9 @@ from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QGuiApplication
 
 from . import __version__, audio, palette
-from .recorder import QUALITIES, Recorder, RecorderError, available as backends_available
+from .recorder import Recorder, RecorderError, available as backends_available
 from .settings import Settings
-from .sources import SOURCES, SourceError, focused_output, outputs, resolve_source, windows
+from .sources import SOURCES, SourceError, outputs, resolve_source, windows
 from .store import History, default_dir, human_duration, human_size, make_name, unique_path
 
 
