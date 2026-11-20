@@ -33,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from PySide6.QtCore import QTimer, qInstallMessageHandler  # noqa: E402
+from PySide6.QtGui import QGuiApplication  # noqa: E402
 
 from hyprtk_rec import app as app_module  # noqa: E402
 from hyprtk_rec import bridge as bridge_module  # noqa: E402
@@ -176,6 +177,13 @@ def main() -> int:
     if bridge.status.get("container") != "gif":
         fail(f"the status does not report the container: {bridge.status!r}")
 
+    def hud_visible() -> bool:
+        return any(window.isVisible() and window.title() == "hyprtk-rec HUD"
+                   for window in QGuiApplication.topLevelWindows())
+
+    if not hud_visible():
+        fail("the recording HUD did not appear when the recording started")
+
     bridge.togglePause()
     if not bridge.paused:
         fail("pause did not register")
@@ -186,6 +194,8 @@ def main() -> int:
     bridge.stop()
     if bridge.recording:
         fail("stop left the bridge recording")
+    if hud_visible():
+        fail("the recording HUD stayed visible after the recording stopped")
     if not bridge.history.recent_paths(1):
         fail("the finished recording was not written to the history")
     if not bridge.recentRecordings:

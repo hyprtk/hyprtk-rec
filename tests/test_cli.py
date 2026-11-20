@@ -25,6 +25,7 @@ class FakeRecorder:
                 "path": self.path, "backend": "wf-recorder", "bytes": 1024}
 
     def start(self, **kwargs):
+        self.kwargs = kwargs
         self.path = kwargs["path"]
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         Path(self.path).write_bytes(b"video")
@@ -222,6 +223,11 @@ class MainTest(unittest.TestCase):
             status = cli.main(["notify-saved", "/tmp/a.mp4"])
         self.assertEqual(status, 0)
         run.assert_called_once_with("/tmp/a.mp4")
+
+    def test_vaapi_flag_reaches_the_recorder(self):
+        status, _, _ = self.run_cli("start", "--vaapi")
+        self.assertEqual(status, 0)
+        self.assertTrue(self.recorder.kwargs.get("vaapi"))
 
     def test_bad_codec(self):
         status, _, err = self.run_cli("start", "--codec", "mpeg2")

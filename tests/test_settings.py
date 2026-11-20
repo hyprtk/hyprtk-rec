@@ -24,6 +24,12 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.get("window"), "")
         self.assertEqual(settings.get("container"), "mp4")
 
+    def test_vaapi_is_off_by_default(self):
+        settings = Settings(self.path)
+        self.assertFalse(settings.get("vaapi"))
+        settings.set("vaapi", True)
+        self.assertTrue(settings.get("vaapi"))
+
     def test_gif_is_a_container(self):
         settings = Settings(self.path)
         settings.set("container", "gif")

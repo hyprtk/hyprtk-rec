@@ -78,9 +78,97 @@ class AudioTest(unittest.TestCase):
             self.assertEqual(audio.default_sink(), "")
             self.assertEqual(audio.system_monitor(), "")
 
+    def test_device_for_mix(self):
+        self.assertEqual(audio.device_for("mix"), "hyprtk-rec-mix.monitor")
+
     def test_describe(self):
         self.assertEqual(audio.describe("none"), "No audio")
         self.assertEqual(audio.describe("mic"), "Microphone")
+        self.assertEqual(audio.describe("mix"), "System + microphone")
+
+
+class MixTest(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+        self.ids = [11, 12, 13]
+        self.fail_loads = 0
+
+        def fake(*args):
+            self.calls.append(args)
+            if args and args[0] == "load-module":
+                if self.fail_loads:
+                    self.fail_loads -= 1
+                    return ""
+                return f"{self.ids.pop(0)}\n"
+            return ""
+
+        for patcher in (mock.patch.object(audio, "_pactl", side_effect=fake),
+                        mock.patch.object(audio, "default_sink", return_value="sink0"),
+                        mock.patch.object(audio, "default_source", return_value="mic0")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def loads(self):
+        return [call for call in self.calls if call and call[0] == "load-module"]
+
+    def unloads(self):
+        return [call for call in self.calls if call and call[0] == "unload-module"]
+
+    def test_mix_creates_a_null_sink_and_two_loopbacks(self):
+        modules, source = audio.start_mix()
+        self.assertEqual(modules, [11, 12, 13])
+        self.assertEqual(source, "hyprtk-rec-mix.monitor")
+        self.assertEqual(self.loads(), [
+            ("load-module", "module-null-sink", "sink_name=hyprtk-rec-mix"),
+            ("load-module", "module-loopback", "sink=hyprtk-rec-mix", "source=sink0.monitor"),
+            ("load-module", "module-loopback", "sink=hyprtk-rec-mix", "source=mic0"),
+        ])
+
+    def test_no_default_output_is_an_error(self):
+        with mock.patch.object(audio, "default_sink", return_value=""):
+            with self.assertRaises(audio.AudioError):
+                audio.start_mix()
+        self.assertEqual(self.calls, [])
+
+    def test_no_microphone_is_an_error(self):
+        with mock.patch.object(audio, "default_source", return_value=""):
+            with self.assertRaises(audio.AudioError):
+                audio.start_mix()
+
+    def test_a_failed_null_sink_creates_nothing(self):
+        self.fail_loads = 1
+        with self.assertRaises(audio.AudioError):
+            audio.start_mix()
+        self.assertEqual(self.unloads(), [])
+
+    def test_a_failed_loopback_unloads_what_was_created(self):
+        # null sink and the first loopback load; the second loopback fails.
+        self.ids = [11, 12]
+        loads = {"n": 0}
+
+        def fake(*args):
+            self.calls.append(args)
+            if args and args[0] == "load-module":
+                loads["n"] += 1
+                if loads["n"] > 2:
+                    return ""
+                return str(self.ids.pop(0))
+            return ""
+
+        with mock.patch.object(audio, "_pactl", side_effect=fake):
+            with self.assertRaises(audio.AudioError):
+                audio.start_mix()
+        self.assertEqual(self.unloads(), [("unload-module", "11"), ("unload-module", "12")])
+
+    def test_stop_unloads_newest_first(self):
+        audio.stop_mix([11, 12, 13])
+        self.assertEqual(self.unloads(), [("unload-module", "13"),
+                                          ("unload-module", "12"),
+                                          ("unload-module", "11")])
+
+    def test_stop_tolerates_an_empty_list(self):
+        audio.stop_mix([])
+        self.assertEqual(self.unloads(), [])
 
 
 if __name__ == "__main__":

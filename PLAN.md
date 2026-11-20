@@ -59,20 +59,18 @@ replay buffer, mixed system+mic audio, VAAPI selection, GPU Screen Recorder.
 
 ## v0.2 — the things a daily user will ask for
 
-- [ ] **Recording HUD** — a small always-on-top pill with the timer and a stop
-      button. Wayland cannot be asked to place a window by the client, so this
-      needs either a Hyprland `move` rule or a layer-shell surface (Quickshell).
-      Decide with a real two-output test.
-- [ ] **Mixed audio** — a PipeWire null-sink + loopback combining the sink
-      monitor and the mic, created and torn down by the app, with a clear
-      fallback when `pactl` cannot do it.
+- [x] **Recording HUD** — a 240x56 frameless window with the timer, Pause and
+      Stop; placed and pinned by a Hyprland rule (`move`, verified live), no
+      focus, shown while a recording is active.
+- [x] **Mixed audio** — null sink + two loopbacks (`audio.start_mix`), module
+      ids in the state file, unloaded on stop *and* on recovery/`pactl` failure.
 - [x] **GIF output** — container `gif` through wf-recorder (`-c gif -x rgb8`),
       fps capped at 30, no audio, backend falls back from wl-screenrec.
 - [x] **Trim** — `trim PATH --from/--to` through ffmpeg (`-ss`/`-t -c copy`),
       `--last`, `--replace`, `--reencode` only when asked.
-- [ ] **VAAPI encoding** — detect `/dev/dri/renderD*` and try
-      `-c h264_vaapi -d … -x yuv420p`; fall back on failure with a visible
-      reason. Mesa on Navi21 cannot transform, which is why it is opt-in.
+- [x] **VAAPI encoding** — opt-in, h264/hevc, **probed** with
+      `ffmpeg -init_hw_device` (a render node can exist and still fail); the
+      window shows the failure reason and a failed probe is a start error.
 - [ ] **Replay buffer** — `wl-screenrec --history N` exists; the UI needs a
       "save the last 30 s" button and a ring-buffer indicator.
 - [x] **Named window picker** — the window source records a picked window
