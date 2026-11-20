@@ -121,6 +121,26 @@ class ArgvTest(unittest.TestCase):
         self.assertEqual(R.with_audio(R.build_argv(rec), rec), R.build_argv(rec))
 
 
+    # -- GIF ---------------------------------------------------------
+    def test_gif_uses_the_gif_codec_and_rgb8(self):
+        argv = R.build_argv(self.recording(container="gif", path="/tmp/a.gif", backend="wf-recorder"))
+        self.assertEqual(argv[0], "wf-recorder")
+        self.assertIn("gif", argv)
+        self.assertIn("rgb8", argv)
+        self.assertNotIn("libx264", argv)
+        self.assertNotIn("crf=23", argv)
+
+    def test_gif_keeps_geometry_and_cursor_flags(self):
+        argv = R.build_argv(self.recording(container="gif", path="/tmp/a.gif",
+                                           geometry="0,0 640x480", cursor=False))
+        self.assertIn("-g", argv)
+        self.assertIn("0,0 640x480", argv)
+        self.assertIn("--no-cursor", argv)
+
+    def test_gif_never_asks_for_audio(self):
+        rec = self.recording(container="gif", audio="system", audio_device="sink.monitor")
+        self.assertEqual(R.with_audio(R.build_argv(rec), rec), R.build_argv(rec))
+
 class BackendTest(unittest.TestCase):
     def test_auto_prefers_wl_screenrec(self):
         self.assertEqual(R.pick_backend("auto", which_all), "wl-screenrec")
@@ -142,6 +162,15 @@ class BackendTest(unittest.TestCase):
             R.pick_backend("ffmpeg", which_all)
 
 
+    def test_gif_forces_wf_recorder(self):
+        # wl-screenrec has no GIF encoder; the fallback is explicit, not silent.
+        self.assertEqual(R.pick_backend("auto", which_all, container="gif"), "wf-recorder")
+        self.assertEqual(R.pick_backend("wl-screenrec", which_all, container="gif"), "wf-recorder")
+
+    def test_gif_without_wf_recorder_is_an_error(self):
+        with self.assertRaises(R.RecorderError):
+            R.pick_backend("auto", lambda program: None, container="gif")
+
 class LifecycleTest(StateMixin):
     def test_start_writes_state(self):
         recorder = self.recorder()
@@ -151,6 +180,19 @@ class LifecycleTest(StateMixin):
         data = json.loads(self.state.read_text())
         self.assertEqual(data["path"], str(self.dir / "a.mp4"))
         self.assertEqual(data["pid"], 4242)
+
+    def test_gif_clamps_the_frame_rate(self):
+        recorder = self.recorder()
+        rec = recorder.start(path=str(self.dir / "a.gif"), container="gif", fps=120)
+        self.assertEqual(rec.container, "gif")
+        self.assertEqual(rec.fps, R.GIF_MAX_FPS)
+        self.assertEqual(rec.backend, "wf-recorder")
+
+    def test_container_is_persisted_in_the_state(self):
+        recorder = self.recorder()
+        recorder.start(path=str(self.dir / "a.gif"), container="gif")
+        data = json.loads(self.state.read_text())
+        self.assertEqual(data["container"], "gif")
 
     def test_start_refuses_a_second_recording(self):
         recorder = self.recorder()
@@ -200,6 +242,44 @@ class LifecycleTest(StateMixin):
         self.assertEqual(status["bytes"], 5)
         self.assertIn("elapsed", status)
         self.assertEqual(status["backend"], "wl-screenrec")
+
+    def test_recover_keeps_a_crashed_recording(self):
+        target = self.dir / "partial.mp4"
+        target.write_bytes(b"half a video")
+        self.state.write_text(json.dumps({
+            "pid": 999999, "backend": "wf-recorder", "source": "output",
+            "path": str(target), "started": time.time() - 30,
+        }))
+        recorder = R.Recorder(str(self.state), which=which_all,
+                              alive_fn=lambda pid: False)
+        rec = recorder.recover()
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec.path, str(target))
+        self.assertFalse(self.state.exists())
+
+    def test_recover_ignores_an_empty_file(self):
+        target = self.dir / "empty.mp4"
+        target.write_bytes(b"")
+        self.state.write_text(json.dumps({
+            "pid": 999999, "backend": "wf-recorder", "source": "output",
+            "path": str(target), "started": time.time(),
+        }))
+        recorder = R.Recorder(str(self.state), which=which_all,
+                              alive_fn=lambda pid: False)
+        self.assertIsNone(recorder.recover())
+        self.assertFalse(self.state.exists())
+
+    def test_recover_leaves_a_live_recording_alone(self):
+        target = self.dir / "live.mp4"
+        target.write_bytes(b"recording")
+        self.state.write_text(json.dumps({
+            "pid": 4242, "backend": "wf-recorder", "source": "output",
+            "path": str(target), "started": time.time(),
+        }))
+        recorder = R.Recorder(str(self.state), which=which_all,
+                              alive_fn=lambda pid: True)
+        self.assertIsNone(recorder.recover())
+        self.assertTrue(self.state.exists())
 
     def test_stale_state_is_cleaned(self):
         self.state.write_text(json.dumps({

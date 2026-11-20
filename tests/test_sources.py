@@ -75,6 +75,24 @@ class ResolveTest(unittest.TestCase):
         self.assertEqual(target["geometry"], "0,0 400x300")
         self.assertEqual(target["label"], "Doc")
 
+    def test_window_picker_address_wins_over_focus(self):
+        picked = S.Window("0x2", "Picked", "app", 10, 20, 500, 400, 0, False, 3)
+        focused = S.Window("0x1", "Focused", "app", 0, 0, 400, 300, 0, False, 0)
+        with mock.patch.object(S, "windows", return_value=[focused, picked]), \
+                mock.patch.object(S, "active_window", return_value=focused):
+            target = S.resolve_source("window", window="0x2")
+        self.assertEqual(target["geometry"], "10,20 500x400")
+        self.assertEqual(target["label"], "Picked")
+        self.assertEqual(target["address"], "0x2")
+
+    def test_closed_window_falls_back_to_the_focused_one(self):
+        focused = S.Window("0x1", "Focused", "app", 0, 0, 400, 300, 0, False, 0)
+        with mock.patch.object(S, "windows", return_value=[focused]), \
+                mock.patch.object(S, "active_window", return_value=focused):
+            target = S.resolve_source("window", window="0xdead")
+        self.assertEqual(target["geometry"], "0,0 400x300")
+        self.assertEqual(target["address"], "0x1")
+
     def test_unknown_source(self):
         with self.assertRaises(S.SourceError):
             S.resolve_source("hologram")

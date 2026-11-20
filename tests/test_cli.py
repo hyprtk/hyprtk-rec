@@ -182,6 +182,47 @@ class MainTest(unittest.TestCase):
         status, _, err = self.run_cli("pause")
         self.assertEqual(status, 3)
 
+    def test_container_flag_reaches_the_filename(self):
+        status, out, _ = self.run_cli("start", "--container", "gif", "--json")
+        self.assertEqual(status, 0)
+        self.assertTrue(json.loads(out)["path"].endswith(".gif"))
+
+    def test_window_flag_is_passed_to_the_resolver(self):
+        with mock.patch.object(cli, "resolve_source",
+                               return_value={"source": "window", "geometry": "0,0 10x10",
+                                             "output": None, "label": "Picked"}) as resolve:
+            status, _, _ = self.run_cli("start", "--source", "window", "--window", "0x55")
+        self.assertEqual(status, 0)
+        self.assertEqual(resolve.call_args.kwargs.get("window"), "0x55")
+
+    def test_trim_needs_a_file(self):
+        status, _, err = self.run_cli("trim")
+        self.assertEqual(status, 2)
+        self.assertIn("trim needs a file", err)
+
+    def test_trim_reports_the_output(self):
+        target = self.dir / "clip.mp4"
+        target.write_bytes(b"x")
+        with mock.patch("hyprtk_rec.trim.run", return_value=str(self.dir / "clip-trimmed.mp4")) as run:
+            status, out, _ = self.run_cli("trim", str(target), "--from", "1:05", "--to", "2:00", "--json")
+        self.assertEqual(status, 0)
+        self.assertIn("clip-trimmed", out)
+        self.assertEqual(run.call_args.kwargs.get("start"), 65.0)
+        self.assertEqual(run.call_args.kwargs.get("end"), 120.0)
+
+    def test_trim_with_a_bad_time_exits_one(self):
+        target = self.dir / "clip.mp4"
+        target.write_bytes(b"x")
+        status, _, err = self.run_cli("trim", str(target), "--from", "abc")
+        self.assertEqual(status, 1)
+        self.assertIn("not a time", err)
+
+    def test_notify_saved_is_a_hidden_command(self):
+        with mock.patch("hyprtk_rec.notify.run", return_value=0) as run:
+            status = cli.main(["notify-saved", "/tmp/a.mp4"])
+        self.assertEqual(status, 0)
+        run.assert_called_once_with("/tmp/a.mp4")
+
     def test_bad_codec(self):
         status, _, err = self.run_cli("start", "--codec", "mpeg2")
         self.assertEqual(status, 2)

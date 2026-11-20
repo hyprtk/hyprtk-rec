@@ -8,6 +8,7 @@ binds to, a status binding that throws when a recording starts.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -25,6 +26,8 @@ os.environ["HYPRTK_WAL_HOME"] = _SANDBOX
 os.environ["HYPRTK_REC_CONFIG_DIR"] = os.path.join(_SANDBOX, "config", "hyprtk-rec")
 os.environ["HYPRTK_REC_DIR"] = os.path.join(_SANDBOX, "videos")
 os.environ["HYPRTK_REC_STATE"] = os.path.join(_SANDBOX, "state.json")
+# The suite must not pop real notifications while a dev gate runs.
+os.environ["HYPRTK_REC_NOTIFY"] = "0"
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -78,6 +81,7 @@ class FakeRecorder:
             "backend": "wf-recorder",
             "source": kwargs.get("source", "output"),
             "audio": kwargs.get("audio", "none"),
+            "container": kwargs.get("container", "mp4"),
             "codec": kwargs.get("codec", "h264"),
             "fps": kwargs.get("fps", 60),
             "bytes": 0,
@@ -111,6 +115,16 @@ class FakeRecorder:
 def main() -> int:
     qInstallMessageHandler(handler)
 
+    # A crash leaves a state file and a partial file; the window must adopt it
+    # instead of silently forgetting an hour of recording.
+    partial = Path(os.environ["HYPRTK_REC_STATE"]).parent / "crash-videos" / "hyprtk-crash-partial.mp4"
+    partial.parent.mkdir(parents=True, exist_ok=True)
+    partial.write_bytes(b"partial-video")
+    Path(os.environ["HYPRTK_REC_STATE"]).write_text(json.dumps({
+        "pid": 999999, "backend": "wf-recorder", "source": "output",
+        "path": str(partial), "started": time.time() - 45,
+    }), encoding="utf-8")
+
     app_module.backends_available = lambda: ["wf-recorder"]
     bridge_module.backends_available = lambda: ["wf-recorder"]
     bridge_module.resolve_source = lambda source, **kw: {
@@ -121,6 +135,9 @@ def main() -> int:
     root = engine.rootObjects()[0]
     bridge.recorder = FakeRecorder()
 
+    if not any("partial" in str(row.get("name", "")) for row in bridge.recentRecordings):
+        fail("the crashed recording was not salvaged into the recent list")
+
     palette = bridge.palette
     for key in ("background", "foreground", "accent", "accent2", "panel", "panelAlt",
                 "panelHover", "textOnAccent", "muted", "mutedText", "border",
@@ -128,12 +145,25 @@ def main() -> int:
         if key not in palette:
             fail(f"palette is missing {key!r}")
 
-    for key in ("source", "fps", "codec", "quality", "audio", "countdown", "dir",
-                "backend", "container", "cursor"):
+    for key in ("source", "window", "fps", "codec", "quality", "audio", "countdown",
+                "dir", "backend", "container", "cursor"):
         if key not in bridge.config:
             fail(f"config is missing {key!r}")
 
+    # The window picker: a chosen address labels the source, and an address
+    # that is not in the list falls back to the focused window.
+    bridge._windows = [{"address": "0x1", "title": "Picked window", "class": "hyprtk-term"}]
+    if bridge.windowLabel != "Focused window":
+        fail(f"empty window pick should say focused: {bridge.windowLabel!r}")
+    bridge.pickWindow("0x1")
+    if bridge.windowLabel != "Picked window":
+        fail(f"the picked window is not labelled: {bridge.windowLabel!r}")
+    bridge.pickWindow("0xdoesnotexist")
+    if bridge.settings.get("window") != "":
+        fail("an unknown address was stored instead of clearing the pick")
+
     bridge.setConfig("source", "output")
+    bridge.setConfig("container", "gif")
     bridge.setConfig("countdown", 0)
     bridge.startSource("output")
 
@@ -141,6 +171,10 @@ def main() -> int:
         fail("startSource did not put the bridge into the recording state")
     if bridge.status.get("elapsedText") != "00:00":
         fail(f"elapsed text is wrong: {bridge.status.get('elapsedText')!r}")
+    if not str(bridge.status.get("path", "")).endswith(".gif"):
+        fail(f"the gif container did not reach the file name: {bridge.status.get('path')!r}")
+    if bridge.status.get("container") != "gif":
+        fail(f"the status does not report the container: {bridge.status!r}")
 
     bridge.togglePause()
     if not bridge.paused:

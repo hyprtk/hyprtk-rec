@@ -21,6 +21,18 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.get("source"), "output")
         self.assertEqual(settings.get("fps"), 60)
         self.assertEqual(settings.get("backend"), "auto")
+        self.assertEqual(settings.get("window"), "")
+        self.assertEqual(settings.get("container"), "mp4")
+
+    def test_gif_is_a_container(self):
+        settings = Settings(self.path)
+        settings.set("container", "gif")
+        self.assertEqual(settings.get("container"), "gif")
+
+    def test_window_address_is_kept_verbatim(self):
+        settings = Settings(self.path)
+        settings.set("window", " 0x55b1 ")
+        self.assertEqual(settings.get("window"), "0x55b1")
 
     def test_persist(self):
         settings = Settings(self.path)

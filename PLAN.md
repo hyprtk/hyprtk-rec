@@ -1,7 +1,7 @@
 # hyprtk-rec — plan
 
-Status: **v0.1.0 scaffolded 2026-11-20**, not yet released. The app runs, the
-gate is green, and the suite wiring is documented below but not applied.
+Status: **v0.2.0 in progress 2026-11-20** (v0.1.0 released and wired into the
+suite). Batches land here as they are finished.
 
 ## Decisions (and why)
 
@@ -66,20 +66,19 @@ replay buffer, mixed system+mic audio, VAAPI selection, GPU Screen Recorder.
 - [ ] **Mixed audio** — a PipeWire null-sink + loopback combining the sink
       monitor and the mic, created and torn down by the app, with a clear
       fallback when `pactl` cannot do it.
-- [ ] **GIF output** — `wf-recorder -c gif` already exists; expose it as a
-      container and cap fps/resolution sensibly.
-- [ ] **Trim** — a start/end range on the finished file through ffmpeg
-      (`-ss`/`-to -c copy`), never a re-encode by default.
+- [x] **GIF output** — container `gif` through wf-recorder (`-c gif -x rgb8`),
+      fps capped at 30, no audio, backend falls back from wl-screenrec.
+- [x] **Trim** — `trim PATH --from/--to` through ffmpeg (`-ss`/`-t -c copy`),
+      `--last`, `--replace`, `--reencode` only when asked.
 - [ ] **VAAPI encoding** — detect `/dev/dri/renderD*` and try
       `-c h264_vaapi -d … -x yuv420p`; fall back on failure with a visible
       reason. Mesa on Navi21 cannot transform, which is why it is opt-in.
 - [ ] **Replay buffer** — `wl-screenrec --history N` exists; the UI needs a
       "save the last 30 s" button and a ring-buffer indicator.
-- [ ] **Named window picker** — the window list already comes from `hyprctl`;
-      the UI only offers the focused one.
-- [ ] **Notification actions** — "Open folder" / "Copy path" on the saved
-      notification (the old shell scripts had this; `notify-send -A` plus a
-      helper is the way).
+- [x] **Named window picker** — the window source records a picked window
+      (stored by client address, self-heals when it closes), `--window ADDRESS`.
+- [x] **Notification actions** — "Open folder" / "Copy path" via a detached
+      `hyprtk-rec notify-saved PATH` waiter (`notify-send -A`).
 
 ## v0.3 — beyond the desktop
 
@@ -88,8 +87,8 @@ replay buffer, mixed system+mic audio, VAAPI selection, GPU Screen Recorder.
 - [ ] **Multi-monitor independent recordings** (two state entries) — only if
       there is a real use case; the current rule is one at a time.
 - [ ] **A settings sheet** in the window instead of only the config file.
-- [ ] **Session restore** — if the app crashes mid-recording, offer to salvage
-      the partial file on next start.
+- [x] **Session restore** — `Recorder.recover()` adopts the partial file of a
+      dead encoder on the next start (history + notification).
 
 ## Suite integration — the exact edits
 

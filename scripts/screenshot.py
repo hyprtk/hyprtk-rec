@@ -59,7 +59,7 @@ def main() -> int:
         recorder.state["path"] = str(Path(_SANDBOX) / "videos" / "Recordings" /
                                       "hyprtk-2026-11-20_11-42-07-output.mp4")
         bridge._set_status()
-        QTimer.singleShot(250, lambda: grab(root, out.with_name(out.stem + "-recording.png"), done=True))
+        QTimer.singleShot(250, lambda: grab(root, out.with_name(out.stem + "-recording.png"), done))
 
     def done(_p=None) -> None:
         app.quit()
@@ -76,12 +76,14 @@ def qquick(window):
     return wrapInstance(getCppPointer(window)[0], QQuickWindow)
 
 
-def grab(window, path: Path, done: bool = False) -> None:
+def grab(window, path: Path, done=None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     shot = qquick(window).grabWindow()
     if not shot.save(str(path)):
         raise SystemExit(f"could not write {path}")
-    print(f"wrote {path} ({shot.width()}x{shot.height()})")
+    print(f"wrote {path} ({shot.width()}x{shot.height()})", flush=True)
+    if callable(done):
+        done()
 
 
 if __name__ == "__main__":
