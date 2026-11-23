@@ -143,6 +143,17 @@ class ArgvTest(unittest.TestCase):
         self.assertIn("--history", argv)
         self.assertEqual(argv[argv.index("--history") + 1], "30")
 
+    def test_replay_pins_a_one_second_gop(self):
+        # The history trim drops whole GOPs, so a default GOP (~4 s at 60 fps)
+        # turned "keep 2 s" into ~5 s of file. One keyframe per second fixes it.
+        argv = R.build_argv(self.recording(backend="wl-screenrec", replay=30, fps=60))
+        self.assertIn("--gop-size", argv)
+        self.assertEqual(argv[argv.index("--gop-size") + 1], "60")
+
+    def test_no_gop_flag_without_replay(self):
+        self.assertNotIn("--gop-size",
+                         R.build_argv(self.recording(backend="wl-screenrec")))
+
     def test_no_history_flag_without_replay(self):
         self.assertNotIn("--history",
                          R.build_argv(self.recording(backend="wl-screenrec")))
@@ -169,6 +180,20 @@ class VaapiProbeTest(unittest.TestCase):
                                    runner=lambda *a, **k: SimpleNamespace(returncode=0, stderr=b""))
         self.assertTrue(ok)
         self.assertEqual(reason, "")
+
+    def test_the_probe_feeds_ffmpeg_an_input(self):
+        # `-f null -` on its own makes ffmpeg fail with "Output file does not
+        # contain any stream" for *every* device, so VAAPI was never reported
+        # available even on a working one. The probe must pass a lavfi input.
+        seen = {}
+
+        def runner(argv, **kwargs):
+            seen["argv"] = argv
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        R.vaapi_probe("/dev/dri/renderD128", runner=runner)
+        self.assertIn("lavfi", seen["argv"])
+        self.assertIn("nullsrc=s=32x32:d=1", seen["argv"])
 
     def test_a_failing_device_names_the_vaapi_error(self):
         ok, reason = R.vaapi_probe(

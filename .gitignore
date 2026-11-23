@@ -8,3 +8,11 @@ build/
 dist/
 .scratch/
 venv/
+
+# makepkg output in packaging/
+packaging/*/src/
+packaging/*/pkg/
+packaging/*/*.pkg.tar.zst
+packaging/*/*.pkg.tar.xz
+packaging/*/wl-screenrec-git/
+packaging/*/ydotool-git/
