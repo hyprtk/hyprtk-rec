@@ -12,7 +12,7 @@ from hyprtk_rec import recorder as R
 
 
 class FakeProc:
-    def __init__(self, pid=4242, exit_code=0):
+    def __init__(self, pid=4242, exit_code=None):
         self.pid = pid
         self._exit = exit_code
         self.signals = []
@@ -24,6 +24,9 @@ class FakeProc:
 
     def send_signal(self, sig):
         self.signals.append(sig)
+        # A real encoder exits on the first SIGINT; without this a stop() test
+        # sits out the whole timeout.
+        self._exit = 0
 
     def wait(self, timeout=None):
         self.waited = True
@@ -37,13 +40,66 @@ def which_all(program):
     return f"/usr/bin/{program}"
 
 
+class StartLivenessTest(unittest.TestCase):
+    """A dead encoder is an error, not a "recording" with a 0-byte file."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="hyprtk-rec-live-"))
+        self.state = self.dir / "state.json"
+        self.out = self.dir / "out.mp4"
+        self._vaapi = mock.patch.object(
+            R, "vaapi_status", return_value=(True, "/dev/dri/renderD128", ""))
+        self._vaapi.start()
+
+    def tearDown(self):
+        self._vaapi.stop()
+        for child in self.dir.iterdir():
+            child.unlink()
+        self.dir.rmdir()
+
+    def recorder(self, process):
+        return R.Recorder(str(self.state), which=which_all,
+                          spawn=lambda argv: process,
+                          alive_fn=lambda pid: True,
+                          signal_fn=lambda pid, sig: None, grace=0)
+
+    def test_a_recorder_that_exits_at_once_is_an_error(self):
+        proc = FakeProc(exit_code=1)
+        (self.dir / "encoder.log").write_text(
+            "[VAAPI @ 0x1] Failed to initialise VAAPI connection: -1\n")
+        self.out.write_bytes(b"")  # what the encoder leaves behind
+        with self.assertRaises(R.RecorderError) as caught:
+            self.recorder(proc).start(path=str(self.out))
+        self.assertIn("Failed to initialise", str(caught.exception))
+        self.assertFalse(self.state.exists(), "a dead start must not write state")
+        self.assertFalse(self.out.exists(), "the 0-byte file must be removed")
+
+    def test_a_live_recorder_is_accepted(self):
+        rec = self.recorder(FakeProc()).start(path=str(self.out))
+        self.assertTrue(self.state.exists())
+        self.assertEqual(rec.backend, "wl-screenrec")
+
+    def test_a_process_without_poll_is_not_assumed_dead(self):
+        class NoPoll:
+            pid = 4242
+
+        rec = self.recorder(NoPoll()).start(path=str(self.out))
+        self.assertEqual(rec.pid, 4242)
+
+
 class StateMixin(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp(prefix="hyprtk-rec-state-"))
         self.state = self.dir / "state.json"
         self.process = FakeProc()
+        # "auto" consults the real VAAPI probe; these tests are about state and
+        # argv, not about this machine's libva, so answer for it.
+        self._vaapi = mock.patch.object(
+            R, "vaapi_status", return_value=(True, "/dev/dri/renderD128", ""))
+        self._vaapi.start()
 
     def tearDown(self):
+        self._vaapi.stop()
         for child in self.dir.iterdir():
             child.unlink()
         self.dir.rmdir()
@@ -53,6 +109,7 @@ class StateMixin(unittest.TestCase):
         kw.setdefault("spawn", lambda argv: self.process)
         kw.setdefault("alive_fn", lambda pid: True)
         kw.setdefault("signal_fn", lambda pid, sig: None)
+        kw.setdefault("grace", 0)
         return R.Recorder(str(self.state), **kw)
 
 
@@ -237,7 +294,19 @@ class VaapiProbeTest(unittest.TestCase):
 
 class BackendTest(unittest.TestCase):
     def test_auto_prefers_wl_screenrec(self):
-        self.assertEqual(R.pick_backend("auto", which_all), "wl-screenrec")
+        with mock.patch.object(R, "vaapi_status", return_value=(True, "/dev/dri/renderD128", "")):
+            self.assertEqual(R.pick_backend("auto", which_all), "wl-screenrec")
+
+    def test_auto_avoids_wl_screenrec_when_vaapi_is_broken(self):
+        # wl-screenrec has no software mode: with a broken libva it exits and
+        # leaves a 0-byte file, so auto must pick the software encoder.
+        with mock.patch.object(R, "vaapi_status",
+                               return_value=(False, "", "Failed to initialise VAAPI connection")):
+            self.assertEqual(R.pick_backend("auto", which_all), "wf-recorder")
+
+    def test_an_explicit_wl_screenrec_is_still_honoured(self):
+        with mock.patch.object(R, "vaapi_status", return_value=(False, "", "broken")):
+            self.assertEqual(R.pick_backend("wl-screenrec", which_all), "wl-screenrec")
 
     def test_auto_falls_back_to_wf_recorder(self):
         only = lambda program: "/usr/bin/wf-recorder" if program == "wf-recorder" else None
